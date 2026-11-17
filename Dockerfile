@@ -13,6 +13,7 @@ WORKDIR /app/web
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
+COPY internal/themes /app/internal/themes
 COPY web ./
 RUN pnpm run build
 
