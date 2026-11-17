@@ -149,4 +149,66 @@ describe("DeleteTorrentDialog", () => {
     fireEvent.click(screen.getByText("Show affected torrents"))
     expect(screen.getByText("Second")).not.toBeNull()
   })
+
+  it("shows grouped per-torrent cross-seeds with tracker, status, and safe file deletion protection", () => {
+    const sourceA = {
+      ...torrents[0],
+      name: "Movie.A.2024",
+      instanceId: 1,
+      instanceName: "qb",
+      tracker: "https://tracker-b.org/announce",
+      tracker_health: "unregistered" as const,
+      matchType: "content_path" as const,
+    }
+    const crossA1 = {
+      ...torrents[1],
+      hash: "cs-a1",
+      name: "Movie.A.2024",
+      instanceId: 1,
+      instanceName: "qb",
+      tracker: "https://tracker-a.org/announce",
+      tracker_health: "unregistered" as const,
+      matchType: "content_path" as const,
+    }
+    const crossA3 = {
+      ...torrents[2],
+      hash: "cs-a3",
+      name: "Movie.A.2024",
+      instanceId: 1,
+      instanceName: "qb",
+      tracker: "https://tracker-d.org/announce",
+      state: "uploading",
+      matchType: "content_path" as const,
+    }
+
+    renderDialog({
+      count: 1,
+      deleteFiles: true,
+      deleteCrossSeeds: true,
+      previewTorrents: [torrents[0]],
+      crossSeedWarning: {
+        affectedTorrents: [crossA1, crossA3],
+        groups: [{ source: sourceA, matches: [crossA1, crossA3] }],
+        selectedKeys: new Set(["1:cs-a1"]),
+        selectedCrossSeeds: [crossA1],
+        uncheckedInstances: [],
+        searchState: "complete",
+        hasWarning: true,
+        search: vi.fn(),
+        reset: vi.fn(),
+        toggleCrossSeed: vi.fn(),
+        toggleGroupCrossSeeds: vi.fn(),
+        selectUnregisteredInGroup: vi.fn(),
+        selectAllCrossSeeds: vi.fn(),
+        deselectAllCrossSeeds: vi.fn(),
+        selectAllUnregisteredCrossSeeds: vi.fn(),
+      },
+    })
+
+    expect(screen.getByRole("heading").textContent).toBe("Delete 2 torrent(s)?")
+    expect(screen.getByText("tracker-a.org")).not.toBeNull()
+    expect(screen.getByText("tracker-d.org")).not.toBeNull()
+    expect(screen.getByText("Data kept on disk (1 cross-seed kept)")).not.toBeNull()
+    expect(screen.getByText(/Data protection active: Files on disk will NOT be deleted/)).not.toBeNull()
+  })
 })

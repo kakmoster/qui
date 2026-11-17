@@ -46,7 +46,7 @@ import {
   TmmConfirmDialog
 } from "../TorrentDialogs"
 import { BulkActionCategoriesContext, BulkActionsContext } from "./bulk-actions-context"
-import { bulkDialogReducer, bulkRequest, CLOSED_DIALOG, deleteRequests, deleteSize, dialogLists, dialogPick, isConfirmationDialog, requestInstanceId, resolvePick, type BulkActionPick, type BulkRequestValues, type DeleteRequest } from "./bulk-action-state"
+import { bulkDialogReducer, bulkRequest, CLOSED_DIALOG, deleteSize, dialogLists, dialogPick, isConfirmationDialog, partitionedDeleteRequests, requestInstanceId, resolvePick, type BulkActionPick, type BulkRequestValues, type DeleteRequest } from "./bulk-action-state"
 
 type BulkRequest = ReturnType<typeof bulkRequest>
 
@@ -302,12 +302,25 @@ export function BulkActionProvider({ children }: { children: ReactNode }) {
     event.preventDefault()
     if (!published || dialog.name !== "delete") return
     const { deleteCrossSeeds } = dialog
-    const crossSeedTargets = deleteCrossSeeds ? buildTorrentActionTargets(crossSeedWarning.affectedTorrents, instanceId) : []
+    const chosenCrossSeeds = deleteCrossSeeds ? (crossSeedWarning.selectedCrossSeeds ?? crossSeedWarning.affectedTorrents) : []
+    const crossSeedTargets = buildTorrentActionTargets(chosenCrossSeeds, instanceId)
     const block = hasCrossSeedTag && blockCrossSeeds ? {
-      hashes: [...getTorrentHashesWithTag(actionTarget.previewTorrents, "cross-seed"), ...(deleteCrossSeeds ? getTorrentHashesWithTag(crossSeedWarning.affectedTorrents, "cross-seed") : [])],
+      hashes: [...getTorrentHashesWithTag(actionTarget.previewTorrents, "cross-seed"), ...(deleteCrossSeeds ? getTorrentHashesWithTag(chosenCrossSeeds, "cross-seed") : [])],
       targets: [...buildTorrentActionTargets(actionTarget.previewTorrents, instanceId), ...crossSeedTargets],
     } : undefined
-    mutateDelete({ instanceId, block, requests: deleteRequests(published, crossSeedTargets, deleteFiles) })
+    mutateDelete({
+      instanceId,
+      block,
+      requests: partitionedDeleteRequests(
+        published,
+        crossSeedTargets,
+        deleteFiles,
+        crossSeedWarning.groups,
+        crossSeedWarning.selectedKeys,
+        deleteCrossSeeds,
+        crossSeedWarning.hasWarning
+      ),
+    })
   }
 
   const totalDeleteSize = useMemo(() => published ? deleteSize(published) : 0, [published])

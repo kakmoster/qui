@@ -159,6 +159,11 @@ export interface LocalCrossSeedMatch {
   matchType: "content_path" | "hardlink" | "reflink" | "name" | "release"
 }
 
+export interface DeleteCrossSeedGroup {
+  source: LocalCrossSeedMatch
+  matches: LocalCrossSeedMatch[]
+}
+
 /** An instance with local filesystem access that the delete check did not read. */
 export interface UncheckedInstance {
   instanceId: number

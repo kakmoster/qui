@@ -373,11 +373,19 @@ const (
 	UncheckedDisabled = "disabled"
 )
 
+// DeleteMatchGroup pairs a selected source torrent with the non-selected
+// cross-seed torrents that a delete of the source torrent with its files affects.
+type DeleteMatchGroup struct {
+	Source  LocalMatch   `json:"source"`
+	Matches []LocalMatch `json:"matches"`
+}
+
 // DeleteMatchesResponse holds the torrents that a delete with files affects,
 // and the instances with local filesystem access that the check could not
 // read, so that the list never reads as complete when it is not.
 type DeleteMatchesResponse struct {
 	Matches   []LocalMatch        `json:"matches"`
+	Groups    []DeleteMatchGroup  `json:"groups,omitempty"`
 	Unchecked []UncheckedInstance `json:"unchecked_instances"`
 }
 

@@ -56,6 +56,7 @@ import type {
   CrossSeedTorrentInfo,
   CrossSeedTorrentSearchResponse,
   CrossSeedTorrentSearchSelection,
+  DeleteCrossSeedGroup,
   DashboardSettings,
   DashboardSettingsInput,
   TransferHistorySettings,
@@ -536,27 +537,29 @@ function mapRawCrossSeedInstanceResult(instance: RawCrossSeedInstanceResult): Cr
   }
 }
 
-type RawLocalMatchesResponse = {
-  matches: Array<{
-    instance_id: number
-    instance_name: string
-    hash: string
-    name: string
-    size: number
-    progress: number
-    save_path: string
-    content_path: string
-    category: string
-    tags: string
-    state: string
-    tracker: string
-    tracker_health?: string
-    match_type: string
-  }>
+type RawLocalMatch = {
+  instance_id: number
+  instance_name: string
+  hash: string
+  name: string
+  size: number
+  progress: number
+  save_path: string
+  content_path: string
+  category: string
+  tags: string
+  state: string
+  tracker: string
+  tracker_health?: string
+  match_type: string
 }
 
-function toLocalCrossSeedMatches(raw: RawLocalMatchesResponse): LocalCrossSeedMatch[] {
-  return (raw.matches || []).map((m) => ({
+type RawLocalMatchesResponse = {
+  matches: RawLocalMatch[]
+}
+
+function toLocalCrossSeedMatch(m: RawLocalMatch): LocalCrossSeedMatch {
+  return {
     instanceId: m.instance_id,
     instanceName: m.instance_name,
     hash: m.hash,
@@ -571,7 +574,11 @@ function toLocalCrossSeedMatches(raw: RawLocalMatchesResponse): LocalCrossSeedMa
     tracker: m.tracker,
     trackerHealth: m.tracker_health,
     matchType: m.match_type as LocalCrossSeedMatch["matchType"],
-  }))
+  }
+}
+
+function toLocalCrossSeedMatches(raw: RawLocalMatchesResponse): LocalCrossSeedMatch[] {
+  return (raw.matches || []).map(toLocalCrossSeedMatch)
 }
 
 export interface StreamSubscription {
@@ -1452,8 +1459,13 @@ class ApiClient {
       instanceIds?: number[]
     },
     signal?: AbortSignal
-  ): Promise<{ matches: LocalCrossSeedMatch[]; uncheckedInstances: UncheckedInstance[] }> {
+  ): Promise<{
+    matches: LocalCrossSeedMatch[]
+    groups?: DeleteCrossSeedGroup[]
+    uncheckedInstances: UncheckedInstance[]
+  }> {
     const raw = await this.request<RawLocalMatchesResponse & {
+      groups?: Array<{ source: RawLocalMatch; matches: RawLocalMatch[] }>
       unchecked_instances: Array<{ instance_id: number; instance_name: string; reason: UncheckedInstance["reason"] }>
     }>(
       `/instances/${instanceId}/torrents/delete-cross-seeds`,
@@ -1461,6 +1473,12 @@ class ApiClient {
     )
     return {
       matches: toLocalCrossSeedMatches(raw),
+      ...(raw.groups ? {
+        groups: raw.groups.map(g => ({
+          source: toLocalCrossSeedMatch(g.source),
+          matches: (g.matches || []).map(toLocalCrossSeedMatch),
+        })),
+      } : {}),
       uncheckedInstances: raw.unchecked_instances.map(u => ({ instanceId: u.instance_id, instanceName: u.instance_name, reason: u.reason })),
     }
   }

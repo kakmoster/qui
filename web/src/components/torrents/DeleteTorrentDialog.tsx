@@ -20,8 +20,9 @@ import { Checkbox } from "@/components/ui/checkbox"
 import type { MouseEvent } from "react"
 import { useTranslation } from "react-i18next"
 import type { Torrent } from "@/types"
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle, ShieldCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getCrossSeedTargetKey } from "@/lib/cross-seed-utils"
 import { getLinuxIsoName, useIncognitoMode } from "@/lib/incognito"
 
 // From this many torrents, the dialog names a few of them and the button shows the count.
@@ -75,11 +76,27 @@ export function DeleteTorrentDialog({
   const { t } = useTranslation("torrents")
   const [incognitoMode] = useIncognitoMode()
   // Include cross-seeds in the displayed count when selected
-  const crossSeedCount = deleteCrossSeeds ? (crossSeedWarning?.affectedTorrents.length ?? 0) : 0
+  const crossSeedCount = deleteCrossSeeds
+    ? (crossSeedWarning?.selectedKeys ? crossSeedWarning.selectedKeys.size : (crossSeedWarning?.affectedTorrents.length ?? 0))
+    : 0
   const displayCount = count + crossSeedCount
   const isLarge = isAllSelected || displayCount >= LARGE_DELETE
   const shown = previewTorrents.slice(0, 3)
   const notLoaded = Math.max(0, count - previewTorrents.length)
+
+  const totalAffected = crossSeedWarning?.affectedTorrents.length ?? 0
+  const hasKeptCrossSeeds =
+    deleteFiles &&
+    crossSeedWarning?.searchState === "complete" &&
+    crossSeedWarning.hasWarning &&
+    crossSeedCount < totalAffected
+  const warningGroups = crossSeedWarning?.groups ?? []
+  const selectedKeys = crossSeedWarning?.selectedKeys
+  const safeGroupCount = warningGroups.filter(group =>
+    group.matches.length === 0 ||
+    (deleteCrossSeeds && group.matches.every(m => (selectedKeys ? selectedKeys.has(getCrossSeedTargetKey(m)) : true)))
+  ).length
+  const isPartialFileDelete = hasKeptCrossSeeds && safeGroupCount > 0
 
   return (
     // A delete that started cannot stop, so the dialog stays open until it ends.
@@ -123,6 +140,16 @@ export function DeleteTorrentDialog({
           onToggleLock={onToggleDeleteFilesLock}
           disabled={isPending}
         />
+        {hasKeptCrossSeeds && (
+          <div className="flex items-start gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-700 dark:text-blue-300">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+            <p>
+              {isPartialFileDelete
+                ? t("crossSeedWarning.safeFileDeletePartialNotice")
+                : t("crossSeedWarning.safeFileDeleteAllKeptNotice")}
+            </p>
+          </div>
+        )}
         {crossSeedWarning && (
           <CrossSeedWarning
             affectedTorrents={crossSeedWarning.affectedTorrents}
@@ -134,6 +161,14 @@ export function DeleteTorrentDialog({
             onDeleteCrossSeedsChange={onDeleteCrossSeedsChange}
             onSearch={crossSeedWarning.search}
             disabled={isPending}
+            groups={crossSeedWarning.groups}
+            selectedKeys={crossSeedWarning.selectedKeys}
+            onToggleCrossSeed={crossSeedWarning.toggleCrossSeed}
+            onToggleGroupCrossSeeds={crossSeedWarning.toggleGroupCrossSeeds}
+            onSelectUnregisteredInGroup={crossSeedWarning.selectUnregisteredInGroup}
+            onSelectAllCrossSeeds={crossSeedWarning.selectAllCrossSeeds}
+            onDeselectAllCrossSeeds={crossSeedWarning.deselectAllCrossSeeds}
+            onSelectAllUnregisteredCrossSeeds={crossSeedWarning.selectAllUnregisteredCrossSeeds}
           />
         )}
         {showBlockCrossSeeds && (

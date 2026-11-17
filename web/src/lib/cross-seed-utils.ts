@@ -4,7 +4,8 @@
  */
 
 import { api } from "@/lib/api"
-import type { FilesystemCapabilities, LocalCrossSeedMatch, Torrent } from "@/types"
+import { getTorrentTargetInstanceId } from "@/lib/torrent-action-targets"
+import type { CrossInstanceTorrent, FilesystemCapabilities, LocalCrossSeedMatch, Torrent } from "@/types"
 import type { TFunction } from "i18next"
 import { useQuery } from "@tanstack/react-query"
 import { useMemo } from "react"
@@ -62,6 +63,87 @@ export interface CrossSeedTorrent extends Torrent {
   instanceId: number
   instanceName: string
   matchType: LocalCrossSeedMatch["matchType"]
+}
+
+export interface CrossSeedDeleteGroup {
+  source: CrossSeedTorrent
+  matches: CrossSeedTorrent[]
+}
+
+export function getCrossSeedTargetKey(t: { instanceId: number; hash: string }): string {
+  return `${t.instanceId}:${t.hash.trim().toLowerCase()}`
+}
+
+export function isUnregisteredOrErroredTorrent(
+  torrent: Pick<Torrent, "tracker_health" | "state">
+): boolean {
+  return torrent.tracker_health === "unregistered" || torrent.state === "error"
+}
+
+export function buildFallbackCrossSeedGroups(
+  torrents: Torrent[],
+  fallbackInstanceId: number,
+  affectedTorrents: CrossSeedTorrent[]
+): CrossSeedDeleteGroup[] {
+  const sourceTorrents: CrossSeedTorrent[] = torrents.map(t => ({
+    ...t,
+    instanceId: getTorrentTargetInstanceId(t, fallbackInstanceId),
+    instanceName: (t as Partial<CrossInstanceTorrent>).instanceName || `Instance ${getTorrentTargetInstanceId(t, fallbackInstanceId)}`,
+    matchType: "content_path",
+  }))
+
+  if (sourceTorrents.length === 0) {
+    if (affectedTorrents.length === 0) return []
+    return [{
+      source: {
+        ...affectedTorrents[0],
+        hash: "__selection__",
+        name: "Selected torrents",
+        tracker: "",
+        tracker_health: undefined,
+      },
+      matches: affectedTorrents,
+    }]
+  }
+
+  if (sourceTorrents.length === 1) {
+    return [{
+      source: sourceTorrents[0],
+      matches: affectedTorrents,
+    }]
+  }
+
+  const groupMap = new Map<string, CrossSeedDeleteGroup>()
+  for (const source of sourceTorrents) {
+    groupMap.set(getCrossSeedTargetKey(source), { source, matches: [] })
+  }
+
+  for (const match of affectedTorrents) {
+    const matchContent = normalizePath(match.content_path || "")
+    const matchSave = normalizePath(match.save_path || "")
+    const matchName = (match.name || "").trim().toLowerCase()
+
+    const matchedSources = sourceTorrents.filter((source) => {
+      const srcContent = normalizePath(source.content_path || "")
+      const srcSave = normalizePath(source.save_path || "")
+      const srcName = (source.name || "").trim().toLowerCase()
+
+      if (matchContent && srcContent && matchContent === srcContent) return true
+      if (matchSave && srcSave && matchSave === srcSave && matchName && srcName && matchName === srcName) return true
+      if (matchName && srcName && matchName === srcName) return true
+      return false
+    })
+
+    if (matchedSources.length > 0) {
+      for (const source of matchedSources) {
+        groupMap.get(getCrossSeedTargetKey(source))?.matches.push(match)
+      }
+    } else {
+      groupMap.get(getCrossSeedTargetKey(sourceTorrents[0]))?.matches.push(match)
+    }
+  }
+
+  return Array.from(groupMap.values())
 }
 
 export interface LocalMatchTypeInfo {

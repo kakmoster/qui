@@ -7,6 +7,7 @@ import type { ListFacts, TorrentSelectionSummary } from "@/contexts/TorrentSelec
 import type { InstanceMetadata } from "@/hooks/useInstanceMetadata"
 import type { TorrentAction } from "./bulk-action-requests"
 import type { api } from "@/lib/api"
+import { getCrossSeedTargetKey, type CrossSeedDeleteGroup } from "@/lib/cross-seed-utils"
 import { ALL_INSTANCES_ID } from "@/lib/instances"
 import type { TorrentActionTarget } from "@/lib/torrent-action-targets"
 import { actionTargetRequest } from "@/lib/torrent-selection"
@@ -171,6 +172,133 @@ export function deleteRequests(published: TorrentSelectionSummary, crossSeedTarg
     })
   }
   return requests
+}
+
+function buildExplicitDeleteBatch(
+  published: TorrentSelectionSummary,
+  sources: TorrentActionTarget[],
+  crossSeeds: TorrentActionTarget[],
+  deleteFiles: boolean,
+  usePairs: boolean
+): DeleteRequest[] {
+  if (sources.length === 0 && crossSeeds.length === 0) return []
+  const { instanceIds } = published
+  const crossSeedScope = requestInstanceId(published, crossSeeds)
+  if (sources.length === 0) {
+    return [{
+      scope: crossSeedScope,
+      count: crossSeeds.length,
+      clientHashes: crossSeeds.map(target => target.hash),
+      body: { action: "delete", deleteFiles, instanceIds, hashes: [], targets: crossSeeds },
+    }]
+  }
+
+  const merged = crossSeedScope !== published.instanceId ? [] : crossSeeds
+  const mergedHashes = merged.map(target => target.hash)
+  const sourceHashes = sources.map(target => target.hash)
+  const requests: DeleteRequest[] = [{
+    scope: requestInstanceId(published, [...sources, ...merged]),
+    count: sources.length + merged.length,
+    clientHashes: [...sourceHashes, ...mergedHashes],
+    body: {
+      action: "delete",
+      deleteFiles,
+      instanceIds,
+      selectAll: false,
+      hashes: usePairs ? [] : [...sourceHashes, ...mergedHashes],
+      targets: usePairs ? [...sources, ...merged] : undefined,
+    },
+  }]
+  if (merged.length === 0 && crossSeeds.length > 0) {
+    requests.push({
+      scope: crossSeedScope,
+      count: crossSeeds.length,
+      clientHashes: crossSeeds.map(target => target.hash),
+      body: { action: "delete", deleteFiles, instanceIds, hashes: [], targets: crossSeeds },
+    })
+  }
+  return requests
+}
+
+/**
+ * Splits a delete into safe (deleteFiles: true) and protected (deleteFiles: false)
+ * requests so disk data is only deleted for torrents where ALL cross-seeds are
+ * also being removed.
+ */
+export function partitionedDeleteRequests(
+  published: TorrentSelectionSummary,
+  crossSeedTargets: TorrentActionTarget[],
+  deleteFiles: boolean,
+  groups?: CrossSeedDeleteGroup[],
+  selectedCrossSeedKeys?: Set<string>,
+  deleteCrossSeeds?: boolean,
+  hasWarning?: boolean
+): DeleteRequest[] {
+  if (!deleteFiles || !hasWarning || !groups || groups.length === 0) {
+    return deleteRequests(published, crossSeedTargets, deleteFiles)
+  }
+
+  const isGroupSafe = (group: CrossSeedDeleteGroup) =>
+    group.matches.length === 0 ||
+    (Boolean(deleteCrossSeeds) && group.matches.every(m => selectedCrossSeedKeys?.has(getCrossSeedTargetKey(m))))
+
+  if (groups.every(isGroupSafe)) {
+    return deleteRequests(published, crossSeedTargets, true)
+  }
+
+  if (!groups.some(isGroupSafe) || published.actionTarget.kind === "selectAll") {
+    return deleteRequests(published, crossSeedTargets, false)
+  }
+
+  const groupBySourceKey = new Map<string, CrossSeedDeleteGroup>()
+  const unsafeCrossSeedKeys = new Set<string>()
+  for (const group of groups) {
+    groupBySourceKey.set(getCrossSeedTargetKey(group.source), group)
+    if (!isGroupSafe(group)) {
+      for (const m of group.matches) {
+        unsafeCrossSeedKeys.add(getCrossSeedTargetKey(m))
+      }
+    }
+  }
+
+  const { actionTarget } = published
+  const usePairs = Boolean(actionTarget.targets) || published.instanceId === ALL_INSTANCES_ID
+  const sourceTargets: TorrentActionTarget[] = actionTarget.targets
+    ? actionTarget.targets
+    : actionTarget.hashes.map(hash => ({ instanceId: published.instanceId, hash }))
+
+  const safeSources: TorrentActionTarget[] = []
+  const keepSources: TorrentActionTarget[] = []
+  for (const target of sourceTargets) {
+    const group = groupBySourceKey.get(getCrossSeedTargetKey(target))
+    if (group && isGroupSafe(group)) {
+      safeSources.push(target)
+    } else {
+      keepSources.push(target)
+    }
+  }
+
+  const safeCrossSeeds: TorrentActionTarget[] = []
+  const keepCrossSeeds: TorrentActionTarget[] = []
+  for (const target of crossSeedTargets) {
+    if (unsafeCrossSeedKeys.has(getCrossSeedTargetKey(target))) {
+      keepCrossSeeds.push(target)
+    } else {
+      safeCrossSeeds.push(target)
+    }
+  }
+
+  if (safeSources.length === 0 && safeCrossSeeds.length === 0) {
+    return deleteRequests(published, crossSeedTargets, false)
+  }
+  if (keepSources.length === 0 && keepCrossSeeds.length === 0) {
+    return deleteRequests(published, crossSeedTargets, true)
+  }
+
+  return [
+    ...buildExplicitDeleteBatch(published, safeSources, safeCrossSeeds, true, usePairs),
+    ...buildExplicitDeleteBatch(published, keepSources, keepCrossSeeds, false, usePairs),
+  ]
 }
 
 // The size that the delete dialog shows. With no total size for the filter,

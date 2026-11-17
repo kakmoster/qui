@@ -743,6 +743,37 @@ describe("bulk action module - delete", () => {
 
     expect(mockedApi.addCrossSeedBlocklist.mock.calls).toEqual([[{ instanceId: INSTANCE_ID, infoHash: "a" }]])
   })
+
+  it("deletes selected unregistered cross-seeds and keeps files on disk when any cross-seed is unchecked", async () => {
+    localStorage.setItem("qui-delete-files-lock", JSON.stringify(true))
+    localStorage.setItem("qui-delete-files-default", JSON.stringify(true))
+    const movieA = makeTorrent({ hash: "a", name: "Movie.A", tracker: "https://tracker-b.org/announce", tracker_health: "unregistered" })
+    const actionTarget: ActionTarget = { kind: "ticks", hashes: ["a"], count: 1, previewTorrents: [movieA] }
+    const { result } = renderModule({ actionTarget })
+
+    const csA = crossSeedMatch({ hash: "cs-a", name: "Movie.A", tracker: "https://tracker-a.org/announce", trackerHealth: "unregistered" })
+    const csC = crossSeedMatch({ hash: "cs-c", name: "Movie.A", tracker: "https://tracker-c.org/announce", trackerHealth: "unregistered" })
+    const csD = crossSeedMatch({ hash: "cs-d", name: "Movie.A", tracker: "https://tracker-d.org/announce", state: "uploading" })
+
+    act(() => result.current.pick({ action: "delete" }))
+    await findCrossSeeds([csA, csC, csD])
+
+    const unregisteredButton = Array.from(document.body.querySelectorAll("button")).find(b => b.textContent?.includes("crossSeedWarning.selectUnregistered/"))
+    if (!unregisteredButton) throw new Error("missing select unregistered button")
+    fireEvent.click(unregisteredButton)
+    await flush()
+
+    await confirmDelete()
+
+    expect(mockedApi.bulkAction.mock.calls).toEqual([[
+      INSTANCE_ID,
+      expect.objectContaining({
+        action: "delete",
+        deleteFiles: false,
+        hashes: ["a", "cs-a", "cs-c"],
+      }),
+    ]])
+  })
 })
 
 // The values that a stub dialog shows, in the order of its stub.

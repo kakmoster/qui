@@ -123,4 +123,33 @@ describe("useCrossSeedWarning", () => {
     expect(result.current.searchState).toBe("idle")
     expect(result.current.affectedTorrents).toEqual([])
   })
+
+  it("supports per-torrent groups and selective cross-seed toggling", async () => {
+    const movieA = { ...match, hash: "src-a", name: "Movie.A", tracker: "https://tracker-b.org/announce", trackerHealth: "unregistered" }
+    const crossA1 = { ...match, hash: "cs-a1", name: "Movie.A", tracker: "https://tracker-a.org/announce", trackerHealth: "unregistered" }
+    const crossA2 = { ...match, hash: "cs-a2", name: "Movie.A", tracker: "https://tracker-c.org/announce", trackerHealth: "unregistered" }
+    const crossA3 = { ...match, hash: "cs-a3", name: "Movie.A", tracker: "https://tracker-d.org/announce" }
+
+    getDeleteCrossSeeds.mockResolvedValue({
+      matches: [crossA1, crossA2, crossA3],
+      groups: [{ source: movieA, matches: [crossA1, crossA2, crossA3] }],
+      uncheckedInstances: [],
+    })
+
+    const { result } = renderHook(() => useCrossSeedWarning({ instanceId: 1, torrents: loaded }))
+    act(() => { result.current.search() })
+    await waitFor(() => expect(result.current.searchState).toBe("complete"))
+
+    expect(result.current.groups).toHaveLength(1)
+    expect(result.current.selectedCrossSeeds.map(t => t.hash)).toEqual(["cs-a1", "cs-a2", "cs-a3"])
+
+    act(() => { result.current.selectUnregisteredInGroup("1:src-a") })
+    expect(result.current.selectedCrossSeeds.map(t => t.hash)).toEqual(["cs-a1", "cs-a2"])
+
+    act(() => { result.current.toggleCrossSeed("1:cs-a3", true) })
+    expect(result.current.selectedCrossSeeds.map(t => t.hash)).toEqual(["cs-a1", "cs-a2", "cs-a3"])
+
+    act(() => { result.current.toggleGroupCrossSeeds("1:src-a", false) })
+    expect(result.current.selectedCrossSeeds).toEqual([])
+  })
 })

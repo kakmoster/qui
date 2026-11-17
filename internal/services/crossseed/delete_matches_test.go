@@ -243,3 +243,34 @@ func TestAddOtherPathPicksPairsOnlySharedPaths(t *testing.T) {
 	require.Equal(t, "cccc", picks[0][0].entry.hash)
 	require.Empty(t, picks[1])
 }
+
+func TestFindDeleteMatchesGroupsPerSelectedTorrent(t *testing.T) {
+	t.Parallel()
+
+	const movieA = "Movie.A.2024.1080p.BluRay.x264-GRP"
+	const movieB = "Movie.B.2024.1080p.BluRay.x264-GRP"
+	filesA := qbt.TorrentFiles{{Name: movieA + ".mkv", Size: 100}}
+	filesB := qbt.TorrentFiles{{Name: movieB + ".mkv", Size: 200}}
+
+	selectedA := crossMatchTorrent(1, "aaaa", movieA, "/data", "/data/"+movieA+".mkv", filesA)
+	selectedB := crossMatchTorrent(1, "bbbb", movieB, "/data", "/data/"+movieB+".mkv", filesB)
+	crossA1 := crossMatchTorrent(1, "a111", movieA, "/data", "/data/"+movieA+".mkv", filesA)
+	crossA2 := crossMatchTorrent(1, "a222", movieA, "/data", "/data/"+movieA+".mkv", filesA)
+	crossB1 := crossMatchTorrent(1, "b111", movieB, "/data", "/data/"+movieB+".mkv", filesB)
+
+	svc, _ := deleteMatchService(selectedA, selectedB, crossA1, crossA2, crossB1)
+	response, err := svc.FindDeleteMatches(t.Context(), map[int][]string{1: {"aaaa", "bbbb"}})
+	require.NoError(t, err)
+	require.Len(t, response.Groups, 2)
+
+	bySource := make(map[string][]string, len(response.Groups))
+	for _, g := range response.Groups {
+		var hashes []string
+		for _, m := range g.Matches {
+			hashes = append(hashes, m.Hash)
+		}
+		bySource[g.Source.Hash] = hashes
+	}
+	require.ElementsMatch(t, []string{"a111", "a222"}, bySource["aaaa"])
+	require.ElementsMatch(t, []string{"b111"}, bySource["bbbb"])
+}

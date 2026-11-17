@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest"
 
-import { bulkDialogReducer, bulkRequest, CLOSED_DIALOG, deleteSize, dialogLists, dialogPick, resolvePick, type BulkActionPick, type BulkDialog } from "../bulk-action-state"
+import { bulkDialogReducer, bulkRequest, CLOSED_DIALOG, deleteSize, dialogLists, dialogPick, partitionedDeleteRequests, resolvePick, type BulkActionPick, type BulkDialog } from "../bulk-action-state"
 import type { ActionTarget } from "@/lib/torrent-selection"
 import { makeFilters } from "@/test/mockFilters"
 import { LIST_FACTS } from "@/test/mockListFacts"
@@ -187,5 +187,52 @@ describe("dialogLists", () => {
     expect(dialogLists(facts, undefined, true)).toEqual({ tags: [], categories: {}, isLoadingTags: true, isLoadingCategories: true })
     const lists = dialogLists({ ...facts, isCrossInstance: true, categories: listCategories }, undefined, true)
     expect(lists).toMatchObject({ isLoadingTags: true, isLoadingCategories: false })
+  })
+})
+
+describe("partitionedDeleteRequests", () => {
+  const movieA = makeTorrent({ hash: "a", name: "Movie A" })
+  const movieB = makeTorrent({ hash: "b", name: "Movie B" })
+  const makeMatch = (hash: string, name: string) => ({
+    ...makeTorrent({ hash, name }),
+    instanceId: 7,
+    instanceName: "qb",
+    matchType: "content_path" as const,
+  })
+
+  it("prevents deleting files when a cross-seed is kept, and splits mixed multi-torrent batches safely", () => {
+    const published = {
+      instanceId: 7,
+      totalSize: 0,
+      excludedSize: 0,
+      listFacts: LIST_FACTS,
+      actionTarget: { kind: "ticks" as const, hashes: ["a", "b"], count: 2, previewTorrents: [movieA, movieB] },
+    }
+    const csA1 = makeMatch("cs-a1", "Movie A")
+    const csA2 = makeMatch("cs-a2", "Movie A")
+    const csB1 = makeMatch("cs-b1", "Movie B")
+    const groups = [
+      { source: makeMatch("a", "Movie A"), matches: [csA1, csA2] },
+      { source: makeMatch("b", "Movie B"), matches: [csB1] },
+    ]
+    const selectedKeys = new Set(["7:cs-a1", "7:cs-b1"])
+    const crossSeedTargets = [
+      { instanceId: 7, hash: "cs-a1" },
+      { instanceId: 7, hash: "cs-b1" },
+    ]
+
+    const requests = partitionedDeleteRequests(published, crossSeedTargets, true, groups, selectedKeys, true, true)
+    expect(requests).toEqual([
+      expect.objectContaining({
+        scope: 7,
+        count: 2,
+        body: expect.objectContaining({ action: "delete", deleteFiles: true, hashes: ["b", "cs-b1"] }),
+      }),
+      expect.objectContaining({
+        scope: 7,
+        count: 2,
+        body: expect.objectContaining({ action: "delete", deleteFiles: false, hashes: ["a", "cs-a1"] }),
+      }),
+    ])
   })
 })

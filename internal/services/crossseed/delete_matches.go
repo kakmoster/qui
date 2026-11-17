@@ -36,21 +36,22 @@ func (s *Service) FindDeleteMatches(ctx context.Context, selection map[int][]str
 		}
 	}
 	matches := deleteMatches{at: make(map[string]int)}
-	// A torrent of the selection on another instance is no match, and a
-	// torrent that already shares a path needs no second check.
+	// A torrent of the selection on another instance is no match.
 	skip := func(c candidateEntry) bool {
 		sel := requested[c.instanceID]
 		return len(sel) > 0 && slices.ContainsFunc(normalizedHashes(c.view.Hash, c.view.InfohashV1, c.view.InfohashV2), func(h string) bool {
 			_, ok := sel[h]
 			return ok
-		}) || matches.shared(c.instanceID, c.hash)
+		})
 	}
-	response := &DeleteMatchesResponse{Matches: []LocalMatch{}, Unchecked: []UncheckedInstance{}}
+	response := &DeleteMatchesResponse{Matches: []LocalMatch{}, Groups: []DeleteMatchGroup{}, Unchecked: []UncheckedInstance{}}
 	for _, instanceID := range slices.Sorted(maps.Keys(selection)) {
 		unchecked, err := s.findSelectedMatches(ctx, instanceID, selection[instanceID], true, skip, func(m LocalMatch) {
 			if m.MatchType == matchTypeContentPath || m.MatchType == matchTypeHardlink || m.MatchType == matchTypeReflink {
 				matches.add(m)
 			}
+		}, func(g DeleteMatchGroup) {
+			response.Groups = append(response.Groups, g)
 		})
 		if errors.Is(err, ErrTorrentNotFound) {
 			continue
@@ -77,7 +78,7 @@ func (s *Service) FindCrossSeeds(ctx context.Context, instanceID int, hash strin
 	var matches []LocalMatch
 	if _, err := s.findSelectedMatches(ctx, instanceID, []string{hash}, false, nil, func(m LocalMatch) {
 		matches = append(matches, m)
-	}); err != nil {
+	}, nil); err != nil {
 		return nil, err
 	}
 	return &LocalMatchesResponse{Matches: matches}, nil
@@ -101,6 +102,7 @@ func (s *Service) findSelectedMatches(
 	sharedOnly bool,
 	skip func(candidateEntry) bool,
 	match func(LocalMatch),
+	onGroup func(DeleteMatchGroup),
 ) (unchecked []UncheckedInstance, err error) {
 	torrents, err := s.syncManager.GetCachedInstanceTorrents(ctx, instanceID)
 	if err != nil {
@@ -180,13 +182,26 @@ func (s *Service) findSelectedMatches(
 	skipCandidate := func(c candidateEntry) bool {
 		return (c.instanceID == instanceID && isSelected(c.hash)) || (skip != nil && skip(c))
 	}
+	sourceInst := instanceByID(instances, instanceID)
 	for i := range torrents {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		if isSelected(torrents[i].Hash) {
-			if err := files.matchSource(ctx, torrents[i].Torrent, instanceID, slices.Concat(picks[i], otherPicks[i]), skipCandidate, match); err != nil {
+			sourceMatches := deleteMatches{list: []LocalMatch{}, at: make(map[string]int)}
+			if err := files.matchSource(ctx, torrents[i].Torrent, instanceID, slices.Concat(picks[i], otherPicks[i]), skipCandidate, func(m LocalMatch) {
+				match(m)
+				if onGroup != nil && (m.MatchType == matchTypeContentPath || m.MatchType == matchTypeHardlink || m.MatchType == matchTypeReflink) {
+					sourceMatches.add(m)
+				}
+			}); err != nil {
 				return nil, err
+			}
+			if onGroup != nil {
+				onGroup(DeleteMatchGroup{
+					Source:  newLocalMatch(sourceInst, &torrents[i], ""),
+					Matches: sourceMatches.list,
+				})
 			}
 		}
 	}
@@ -455,12 +470,6 @@ func (b *batchFiles) folderEntries(ctx context.Context, instanceID int, savePath
 type deleteMatches struct {
 	list []LocalMatch
 	at   map[string]int
-}
-
-// shared reports whether the torrent already has a shared-path match.
-func (d *deleteMatches) shared(instanceID int, hash string) bool {
-	at, ok := d.at[cacheKeyForTorrentFiles(instanceID, hash)]
-	return ok && d.list[at].MatchType == matchTypeContentPath
 }
 
 func (d *deleteMatches) add(m LocalMatch) {

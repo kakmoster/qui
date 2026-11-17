@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>qui</Name>
+  <Repository>ghcr.io/kakmoster/qui:latest</Repository>
+  <Registry>https://ghcr.io/</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Project>https://github.com/autobrr/qui</Project>
+  <Overview>Custom build of qui (modern qBittorrent WebUI) with grouped per-torrent cross-seed deletion selection and safe disk-data protection when any cross-seed is kept.</Overview>
+  <Category>Downloaders: Tools:</Category>
+  <WebUI>http://[IP]:[PORT:7476]/</WebUI>
+  <ExtraParams/>
+  <PostArgs/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="WebUI Port" Target="7476" Default="7476" Mode="tcp" Description="qui WebUI listening port" Type="Port" Display="always" Required="true" Mask="false">7476</Config>
+  <Config Name="Appdata Config" Target="/config" Default="/mnt/user/appdata/qui" Mode="rw" Description="Persistent configuration and SQLite database directory" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/qui</Config>
+  <Config Name="Media / Torrents Data (Optional)" Target="/data" Default="/mnt/user/data" Mode="rw" Description="Mount your torrent data path matching qBittorrent for local hardlink/cross-seed detection" Type="Path" Display="always" Required="false" Mask="false">/mnt/user/data</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID (Unraid nobody = 99)" Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID (Unraid users = 100)" Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+  <Config Name="TZ" Target="TZ" Default="Europe/Berlin" Mode="" Description="Timezone" Type="Variable" Display="always" Required="false" Mask="false">Europe/Berlin</Config>
+</Container>

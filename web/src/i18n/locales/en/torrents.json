@@ -156,7 +156,19 @@
     "alsoDeleteCrossSeeds": "Also delete these cross-seeded torrents",
     "showAffected": "Show affected torrents",
     "hideAffected": "Hide affected torrents",
-    "more": "+ {{count}} more"
+    "more": "+ {{count}} more",
+    "selectAll": "Select all ({{count}})",
+    "selectUnregistered": "Select unregistered ({{count}})",
+    "selectUnregisteredShort": "Unregistered ({{count}})",
+    "clearSelection": "Clear",
+    "selectedSummary": "{{selected}} of {{total}} cross-seed(s) selected for removal",
+    "groupSelectedCount": "{{selected}}/{{total}} selected",
+    "groupFilesDeleted": "Files will be deleted",
+    "groupFilesKept": "Data kept on disk ({{count}} cross-seed kept)",
+    "noCrossSeedsGroup": "{{count}} selected torrent(s) have no cross-seeds (files will be deleted).",
+    "noCrossSeedsGroupSafe": "{{count}} selected torrent(s) have no cross-seeds.",
+    "safeFileDeleteAllKeptNotice": "Data protection active: Files on disk will NOT be deleted because at least one cross-seed is kept for every affected torrent. Select all cross-seeds of a torrent to remove its data from disk.",
+    "safeFileDeletePartialNotice": "Data protection active: Files on disk will only be deleted for torrents where all cross-seeds are removed, and kept on disk for torrents with remaining cross-seeds."
   },
   "recheckDialog": {
     "title": "Force Recheck {{count}} torrent(s)?",
